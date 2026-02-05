@@ -12,3 +12,4 @@ payload:
   - DOMAIN-SUFFIX,wujieliulan.com
   - DOMAIN-SUFFIX,dongtaiwang.com
   - DOMAIN-SUFFIX,proxyrarbg.org
+  - DOMAIN-SUFFIX,eprice.com.hk
