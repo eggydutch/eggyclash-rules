@@ -1,3 +1,4 @@
 payload:
-  - DOMAIN-SUFFIX,tclai.top
+  - DOMAIN-SUFFIX,weixin.com
   - DOMAIN-SUFFIX,quakoo.cn
+  - DOMAIN-SUFFIX,tclai.top
