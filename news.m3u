@@ -1,0 +1,13 @@
+#EXTM3U
+
+#EXTINF:-1,CBS News
+https://cbsn-us.cbsnstream.cbsnews.com/out/v1/master.m3u8
+
+#EXTINF:-1,ABC News Live
+https://abcnews-streams.abcnews.com/hls/live.m3u8
+
+#EXTINF:-1,Bloomberg TV
+https://bloomberg.com/media-manifest/streams/us.m3u8
+
+#EXTINF:-1,NBC News NOW
+https://nbcnewsnow.akamaized.net/live.m3u8
