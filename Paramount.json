@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "domain": [
+        "cbsi.live.ott.irdeto.com",
+        "cbsplaylistserver.aws.syncbak.com",
+        "cbsservice.aws.syncbak.com",
+        "link.theplatform.com"
+      ],
+      "domain_suffix": [
+        "cbsaavideo.com",
+        "cbsi.com",
+        "cbsivideo.com",
+        "paramountplus.com",
+        "pplusstatic.com",
+        "cbsig.net",
+        "cbsstatic.com",
+        "siteintercept.qualtrics.com",
+        "mtvnservices.com",
+        "showtime.com",
+        "cedexis-test.com",
+        "citrix-itm-test.com",
+        "mncdn.com",
+        "cookielaw.org",
+        "bitgravity.com"
+      ]
+    }
+  ]
+}
