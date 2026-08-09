@@ -3,22 +3,9 @@
   "rules": [
     {
       "domain_suffix": [
-        "epochtimes.com",
-        "epochweekly.com",
-        "ntdtv.com",
-        "mingjingnews.com",
-        "secretchina.com",
-        "bannedbook.org",
-        "inmediahk.net",
-        "creaders.net",
-        "aboluowang.com",
-        "tuidang.org",
-        "wujieliulan.com",
-        "dongtaiwang.com",
-        "proxyrarbg.org",
-        "eprice.com.hk",
-        "btdig.com",
-        "良心云.com"
+        "weixin.com",
+        "quakoo.cn",
+        "tclai.top"
       ]
     }
   ]
