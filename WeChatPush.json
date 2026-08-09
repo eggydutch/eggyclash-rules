@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "rules": [
+    {
+      "domain_keyword": [
+        "long.wechat",
+        "long.weixin",
+        "short.wechat",
+        "short.weixin",
+        "extshort.weixin.qq.com",
+        "minorshort.weixin.qq.com",
+        "dns.weixin"
+      ]
+    }
+  ]
+}
