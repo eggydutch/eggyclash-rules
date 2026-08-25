@@ -1,3 +1,4 @@
+```yaml
 name: Build Rule Sets
 
 on:
@@ -6,8 +7,7 @@ on:
       - main
     paths:
       - "*.json"
-      - "*.domain.txt"
-      - "*.ipcidr.txt"
+      - "*.txt"
       - ".github/workflows/build-rules.yml"
   workflow_dispatch:
 
@@ -23,13 +23,20 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install sing-box
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          VERSION=$(curl -fsSL https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r '.tag_name')
+          VERSION=$(curl -fsSL --connect-timeout 10 --max-time 30 \
+            https://api.github.com/repos/SagerNet/sing-box/releases/latest \
+            | jq -r '.tag_name')
+
           VERSION_NO_V="${VERSION#v}"
 
-          curl -fL "https://github.com/SagerNet/sing-box/releases/download/${VERSION}/sing-box-${VERSION_NO_V}-linux-amd64.tar.gz" \
+          echo "Installing sing-box ${VERSION}"
+
+          curl -fL --connect-timeout 10 --max-time 60 \
+            "https://github.com/SagerNet/sing-box/releases/download/${VERSION}/sing-box-${VERSION_NO_V}-linux-amd64.tar.gz" \
             -o /tmp/sing-box.tar.gz
 
           mkdir -p /tmp/sing-box
@@ -41,75 +48,130 @@ jobs:
 
           sing-box version
 
-      - name: Install mihomo
+      - name: Install Mihomo
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
 
-          VERSION=$(curl -fsSL https://api.github.com/repos/MetaCubeX/mihomo/releases/latest | jq -r '.tag_name')
+          echo "Getting latest Mihomo release..."
 
-          curl -fL "https://github.com/MetaCubeX/mihomo/releases/download/${VERSION}/mihomo-linux-amd64-${VERSION}.gz" \
+          RELEASE_JSON=$(curl -fsSL --connect-timeout 10 --max-time 30 \
+            https://api.github.com/repos/MetaCubeX/mihomo/releases/latest)
+
+          VERSION=$(echo "$RELEASE_JSON" | jq -r '.tag_name')
+
+          DOWNLOAD_URL=$(echo "$RELEASE_JSON" | jq -r '
+            .assets[]
+            | select(.name | test("^mihomo-linux-amd64-v3-.*\\.gz$"))
+            | .browser_download_url
+          ' | head -n 1)
+
+          if [ -z "$DOWNLOAD_URL" ] || [ "$DOWNLOAD_URL" = "null" ]; then
+            echo "ERROR: Could not find Mihomo Linux amd64 v3 release asset."
+            exit 1
+          fi
+
+          echo "Mihomo version: ${VERSION}"
+          echo "Download URL: ${DOWNLOAD_URL}"
+
+          curl -fL --connect-timeout 10 --max-time 120 \
+            "$DOWNLOAD_URL" \
             -o /tmp/mihomo.gz
 
           gunzip -f /tmp/mihomo.gz
 
-          sudo install -m 0755 /tmp/mihomo /usr/local/bin/mihomo
+          sudo install -m 0755 \
+            /tmp/mihomo \
+            /usr/local/bin/mihomo
 
           mihomo version
 
       - name: Build JSON to SRS
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
+
           shopt -s nullglob
 
           for file in *.json; do
             name="${file%.json}"
 
+            echo "========================================"
             echo "Building ${file} -> ${name}.srs"
+            echo "========================================"
 
             jq empty "$file"
 
             sing-box rule-set compile \
               --output "${name}.srs" \
               "$file"
+
+            ls -lh "${name}.srs"
           done
 
-      - name: Build domain TXT to MRS
+      - name: Build JSON domain rules to MRS
+        shell: bash
         run: |
-          set -e
+          set -euo pipefail
+
           shopt -s nullglob
 
-          for file in *.domain.txt; do
-            name="${file%.domain.txt}"
+          for file in *.json; do
+            name="${file%.json}"
+            tmp="/tmp/${name}-domains.txt"
 
+            jq -r '
+              .rules[]? |
+              (.domain_suffix[]? // empty),
+              (.domain[]? // empty)
+            ' "$file" |
+            sed '/^[[:space:]]*$/d' |
+            sort -u > "$tmp"
+
+            if [ -s "$tmp" ]; then
+              echo "========================================"
+              echo "Building ${file} -> ${name}.mrs"
+              echo "========================================"
+
+              mihomo convert-ruleset \
+                domain \
+                text \
+                "$tmp" \
+                "${name}.mrs"
+
+              ls -lh "${name}.mrs"
+            else
+              echo "No domain rules found in ${file}"
+            fi
+          done
+
+      - name: Build TXT to MRS
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          shopt -s nullglob
+
+          for file in *.txt; do
+            name="${file%.txt}"
+
+            echo "========================================"
             echo "Building ${file} -> ${name}.mrs"
+            echo "========================================"
 
             mihomo convert-ruleset \
               domain \
               text \
               "$file" \
               "${name}.mrs"
+
+            ls -lh "${name}.mrs"
           done
 
-      - name: Build IP CIDR TXT to MRS
+      - name: Commit generated rule sets
+        shell: bash
         run: |
-          set -e
-          shopt -s nullglob
-
-          for file in *.ipcidr.txt; do
-            name="${file%.ipcidr.txt}"
-
-            echo "Building ${file} -> ${name}.mrs"
-
-            mihomo convert-ruleset \
-              ipcidr \
-              text \
-              "$file" \
-              "${name}.mrs"
-          done
-
-      - name: Commit generated files
-        run: |
-          set -e
+          set -euo pipefail
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -123,3 +185,4 @@ jobs:
 
           git commit -m "build: update rule sets"
           git push
+```
