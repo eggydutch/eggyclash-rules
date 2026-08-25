@@ -1,4 +1,4 @@
-name: Build Rule Sets
+name: Build SRS Rule Sets
 
 on:
   push:
@@ -6,7 +6,6 @@ on:
       - main
     paths:
       - "*.json"
-      - "*.txt"
       - ".github/workflows/build-rules.yml"
   workflow_dispatch:
 
@@ -26,7 +25,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          VERSION=$(curl -fsSL --connect-timeout 10 --max-time 30 \
+          VERSION=$(curl -fsSL \
+            --connect-timeout 10 \
+            --max-time 30 \
             https://api.github.com/repos/SagerNet/sing-box/releases/latest \
             | jq -r '.tag_name')
 
@@ -34,56 +35,22 @@ jobs:
 
           echo "Installing sing-box ${VERSION}"
 
-          curl -fL --connect-timeout 10 --max-time 60 \
+          curl -fL \
+            --connect-timeout 10 \
+            --max-time 60 \
             "https://github.com/SagerNet/sing-box/releases/download/${VERSION}/sing-box-${VERSION_NO_V}-linux-amd64.tar.gz" \
             -o /tmp/sing-box.tar.gz
 
           mkdir -p /tmp/sing-box
-          tar -xzf /tmp/sing-box.tar.gz -C /tmp/sing-box
+
+          tar -xzf /tmp/sing-box.tar.gz \
+            -C /tmp/sing-box
 
           sudo install -m 0755 \
             "$(find /tmp/sing-box -type f -name sing-box | head -n 1)" \
             /usr/local/bin/sing-box
 
           sing-box version
-
-      - name: Install Mihomo
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          echo "Getting latest Mihomo release..."
-
-          RELEASE_JSON=$(curl -fsSL --connect-timeout 10 --max-time 30 \
-            https://api.github.com/repos/MetaCubeX/mihomo/releases/latest)
-
-          VERSION=$(echo "$RELEASE_JSON" | jq -r '.tag_name')
-
-          DOWNLOAD_URL=$(echo "$RELEASE_JSON" | jq -r '
-            .assets[]
-            | select(.name | test("^mihomo-linux-amd64-v3-.*\\.gz$"))
-            | .browser_download_url
-          ' | head -n 1)
-
-          if [ -z "$DOWNLOAD_URL" ] || [ "$DOWNLOAD_URL" = "null" ]; then
-            echo "ERROR: Could not find Mihomo Linux amd64 v3 release asset."
-            exit 1
-          fi
-
-          echo "Mihomo version: ${VERSION}"
-          echo "Download URL: ${DOWNLOAD_URL}"
-
-          curl -fL --connect-timeout 10 --max-time 120 \
-            "$DOWNLOAD_URL" \
-            -o /tmp/mihomo.gz
-
-          gunzip -f /tmp/mihomo.gz
-
-          sudo install -m 0755 \
-            /tmp/mihomo \
-            /usr/local/bin/mihomo
-
-          mihomo version
 
       - name: Build JSON to SRS
         shell: bash
@@ -108,66 +75,7 @@ jobs:
             ls -lh "${name}.srs"
           done
 
-      - name: Build JSON domain rules to MRS
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          shopt -s nullglob
-
-          for file in *.json; do
-            name="${file%.json}"
-            tmp="/tmp/${name}-domains.txt"
-
-            jq -r '
-              .rules[]? |
-              (.domain_suffix[]? // empty),
-              (.domain[]? // empty)
-            ' "$file" |
-            sed '/^[[:space:]]*$/d' |
-            sort -u > "$tmp"
-
-            if [ -s "$tmp" ]; then
-              echo "========================================"
-              echo "Building ${file} -> ${name}.mrs"
-              echo "========================================"
-
-              mihomo convert-ruleset \
-                domain \
-                text \
-                "$tmp" \
-                "${name}.mrs"
-
-              ls -lh "${name}.mrs"
-            else
-              echo "No domain rules found in ${file}"
-            fi
-          done
-
-      - name: Build TXT to MRS
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          shopt -s nullglob
-
-          for file in *.txt; do
-            name="${file%.txt}"
-
-            echo "========================================"
-            echo "Building ${file} -> ${name}.mrs"
-            echo "========================================"
-
-            mihomo convert-ruleset \
-              domain \
-              text \
-              "$file" \
-              "${name}.mrs"
-
-            ls -lh "${name}.mrs"
-          done
-
-      - name: Commit generated rule sets
+      - name: Commit generated SRS files
         shell: bash
         run: |
           set -euo pipefail
@@ -175,12 +83,12 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add '*.srs' '*.mrs'
+          git add '*.srs'
 
           if git diff --cached --quiet; then
-            echo "No changes to commit."
+            echo "No SRS files changed."
             exit 0
           fi
 
-          git commit -m "build: update rule sets"
+          git commit -m "build: update SRS rule sets"
           git push
