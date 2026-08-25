@@ -6,9 +6,10 @@ on:
     branches:
       - main
     paths:
-      - '**.json'
-      - '.github/workflows/build-rules.yml'
-
+      - "*.json"
+      - "*.domain.txt"
+      - "*.ipcidr.txt"
+      - ".github/workflows/build-rules.yml"
   workflow_dispatch:
 
 permissions:
@@ -19,54 +20,47 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
-      # --------------------------------------------------
-      # Install latest stable sing-box
-      # --------------------------------------------------
       - name: Install sing-box
         shell: bash
         run: |
-          set -euo pipefail
+          set -e
 
-          VERSION=$(curl -fsSL https://api.github.com/repos/SagerNet/sing-box/releases/latest \
+          VERSION=$(curl -fsSL \
+            https://api.github.com/repos/SagerNet/sing-box/releases/latest \
             | jq -r '.tag_name')
 
-          echo "Installing sing-box ${VERSION}"
+          VERSION_NO_V="${VERSION#v}"
 
           curl -fL \
-            "https://github.com/SagerNet/sing-box/releases/download/${VERSION}/sing-box-${VERSION#v}-linux-amd64.tar.gz" \
+            "https://github.com/SagerNet/sing-box/releases/download/${VERSION}/sing-box-${VERSION_NO_V}-linux-amd64.tar.gz" \
             -o /tmp/sing-box.tar.gz
 
-          tar -xzf /tmp/sing-box.tar.gz -C /tmp
+          mkdir -p /tmp/sing-box
+          tar -xzf /tmp/sing-box.tar.gz -C /tmp/sing-box
 
           sudo install -m 0755 \
-            "$(find /tmp -type f -name sing-box | head -n 1)" \
+            "$(find /tmp/sing-box -type f -name sing-box | head -n 1)" \
             /usr/local/bin/sing-box
 
           sing-box version
 
-      # --------------------------------------------------
-      # Install latest stable mihomo
-      # --------------------------------------------------
       - name: Install mihomo
         shell: bash
         run: |
-          set -euo pipefail
+          set -e
 
-          VERSION=$(curl -fsSL https://api.github.com/repos/MetaCubeX/mihomo/releases/latest \
+          VERSION=$(curl -fsSL \
+            https://api.github.com/repos/MetaCubeX/mihomo/releases/latest \
             | jq -r '.tag_name')
-
-          echo "Installing mihomo ${VERSION}"
 
           curl -fL \
             "https://github.com/MetaCubeX/mihomo/releases/download/${VERSION}/mihomo-linux-amd64-${VERSION}.gz" \
             -o /tmp/mihomo.gz
 
-          gunzip /tmp/mihomo.gz
+          gunzip -f /tmp/mihomo.gz
 
           sudo install -m 0755 \
             /tmp/mihomo \
@@ -74,117 +68,118 @@ jobs:
 
           mihomo version
 
-      # --------------------------------------------------
-      # Compile every JSON → SRS + MRS
-      # --------------------------------------------------
-      - name: Build rule sets
+      - name: Build JSON rule sets
         shell: bash
         run: |
-          set -euo pipefail
+          set -e
 
           shopt -s nullglob
 
-          json_files=( *.json )
+          for file in *.json; do
+            name="${file%.json}"
 
-          if [ ${#json_files[@]} -eq 0 ]; then
-            echo "No JSON files found."
-            exit 0
-          fi
+            echo "Building ${file}"
 
-          for json in "${json_files[@]}"; do
-
-            name="${json%.json}"
-
-            echo "========================================"
-            echo "Building: ${json}"
-            echo "========================================"
-
-            # ------------------------------------------
-            # Validate JSON
-            # ------------------------------------------
-            jq empty "$json"
-
-            # ------------------------------------------
-            # Build sing-box SRS
-            # ------------------------------------------
-            echo "→ ${name}.srs"
+            jq empty "$file"
 
             sing-box rule-set compile \
               --output "${name}.srs" \
-              "$json"
+              "$file"
 
-            # ------------------------------------------
-            # Build Mihomo MRS
-            #
-            # JSON source format:
-            #
-            # {
-            #   "version": 3,
-            #   "rules": [
-            #     {
-            #       "domain_suffix": [...]
-            #     }
-            #   ]
-            # }
-            #
-            # Extract domain_suffix / domain entries
-            # and convert them into Mihomo domain rules.
-            # ------------------------------------------
+            echo "Created ${name}.srs"
+          done
 
-            echo "→ ${name}.mrs"
+      - name: Build domain MRS
+        shell: bash
+        run: |
+          set -e
 
-            tmp_file="$(mktemp)"
+          shopt -s nullglob
+
+          for file in *.domain.txt; do
+            name="${file%.domain.txt}"
+
+            echo "Building ${file} -> ${name}.mrs"
+
+            mihomo convert-ruleset \
+              domain \
+              text \
+              "$file" \
+              "${name}.mrs"
+
+            echo "Created ${name}.mrs"
+          done
+
+      - name: Build IP CIDR MRS
+        shell: bash
+        run: |
+          set -e
+
+          shopt -s nullglob
+
+          for file in *.ipcidr.txt; do
+            name="${file%.ipcidr.txt}"
+
+            echo "Building ${file} -> ${name}.mrs"
+
+            mihomo convert-ruleset \
+              ipcidr \
+              text \
+              "$file" \
+              "${name}.mrs"
+
+            echo "Created ${name}.mrs"
+          done
+
+      - name: Build MRS from JSON domain rules
+        shell: bash
+        run: |
+          set -e
+
+          shopt -s nullglob
+
+          for file in *.json; do
+            name="${file%.json}"
+            tmp="/tmp/${name}.txt"
 
             jq -r '
               .rules[]? |
               (.domain_suffix[]? // empty),
               (.domain[]? // empty)
-            ' "$json" |
+            ' "$file" |
             sed '/^[[:space:]]*$/d' |
-            sed 's/^\.+//' |
-            sed 's/^/+./' |
-            sort -u > "$tmp_file"
+            sort -u > "$tmp"
 
-            if [ -s "$tmp_file" ]; then
+            if [ -s "$tmp" ]; then
+              echo "Building ${file} -> ${name}.mrs"
+
               mihomo convert-ruleset \
                 domain \
                 text \
-                "$tmp_file" \
+                "$tmp" \
                 "${name}.mrs"
+
+              echo "Created ${name}.mrs"
             else
-              echo "No domain/domain_suffix rules found."
-              rm -f "${name}.mrs"
+              echo "No domain rules found in ${file}"
             fi
-
-            rm -f "$tmp_file"
-
-            echo "Built:"
-            ls -lh "${name}.srs"
-
-            if [ -f "${name}.mrs" ]; then
-              ls -lh "${name}.mrs"
-            fi
-
           done
 
-      # --------------------------------------------------
-      # Commit generated files
-      # --------------------------------------------------
-      - name: Commit generated rule sets
+      - name: Commit generated files
         shell: bash
         run: |
-          set -euo pipefail
+          set -e
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add '*.srs' '*.mrs'
+          git add "*.srs" "*.mrs"
 
           if git diff --cached --quiet; then
-            echo "No generated files changed."
+            echo "No changes to commit."
             exit 0
           fi
 
-          git commit -m "build: update SRS and MRS rule sets"
+          git commit -m "build: update rule sets"
           git push
 ```
