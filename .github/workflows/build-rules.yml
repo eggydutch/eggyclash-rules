@@ -1,4 +1,3 @@
-```yaml
 name: Build Rule Sets
 
 on:
@@ -24,18 +23,13 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install sing-box
-        shell: bash
         run: |
           set -e
 
-          VERSION=$(curl -fsSL \
-            https://api.github.com/repos/SagerNet/sing-box/releases/latest \
-            | jq -r '.tag_name')
-
+          VERSION=$(curl -fsSL https://api.github.com/repos/SagerNet/sing-box/releases/latest | jq -r '.tag_name')
           VERSION_NO_V="${VERSION#v}"
 
-          curl -fL \
-            "https://github.com/SagerNet/sing-box/releases/download/${VERSION}/sing-box-${VERSION_NO_V}-linux-amd64.tar.gz" \
+          curl -fL "https://github.com/SagerNet/sing-box/releases/download/${VERSION}/sing-box-${VERSION_NO_V}-linux-amd64.tar.gz" \
             -o /tmp/sing-box.tar.gz
 
           mkdir -p /tmp/sing-box
@@ -48,52 +42,40 @@ jobs:
           sing-box version
 
       - name: Install mihomo
-        shell: bash
         run: |
           set -e
 
-          VERSION=$(curl -fsSL \
-            https://api.github.com/repos/MetaCubeX/mihomo/releases/latest \
-            | jq -r '.tag_name')
+          VERSION=$(curl -fsSL https://api.github.com/repos/MetaCubeX/mihomo/releases/latest | jq -r '.tag_name')
 
-          curl -fL \
-            "https://github.com/MetaCubeX/mihomo/releases/download/${VERSION}/mihomo-linux-amd64-${VERSION}.gz" \
+          curl -fL "https://github.com/MetaCubeX/mihomo/releases/download/${VERSION}/mihomo-linux-amd64-${VERSION}.gz" \
             -o /tmp/mihomo.gz
 
           gunzip -f /tmp/mihomo.gz
 
-          sudo install -m 0755 \
-            /tmp/mihomo \
-            /usr/local/bin/mihomo
+          sudo install -m 0755 /tmp/mihomo /usr/local/bin/mihomo
 
           mihomo version
 
-      - name: Build JSON rule sets
-        shell: bash
+      - name: Build JSON to SRS
         run: |
           set -e
-
           shopt -s nullglob
 
           for file in *.json; do
             name="${file%.json}"
 
-            echo "Building ${file}"
+            echo "Building ${file} -> ${name}.srs"
 
             jq empty "$file"
 
             sing-box rule-set compile \
               --output "${name}.srs" \
               "$file"
-
-            echo "Created ${name}.srs"
           done
 
-      - name: Build domain MRS
-        shell: bash
+      - name: Build domain TXT to MRS
         run: |
           set -e
-
           shopt -s nullglob
 
           for file in *.domain.txt; do
@@ -106,15 +88,11 @@ jobs:
               text \
               "$file" \
               "${name}.mrs"
-
-            echo "Created ${name}.mrs"
           done
 
-      - name: Build IP CIDR MRS
-        shell: bash
+      - name: Build IP CIDR TXT to MRS
         run: |
           set -e
-
           shopt -s nullglob
 
           for file in *.ipcidr.txt; do
@@ -127,53 +105,16 @@ jobs:
               text \
               "$file" \
               "${name}.mrs"
-
-            echo "Created ${name}.mrs"
-          done
-
-      - name: Build MRS from JSON domain rules
-        shell: bash
-        run: |
-          set -e
-
-          shopt -s nullglob
-
-          for file in *.json; do
-            name="${file%.json}"
-            tmp="/tmp/${name}.txt"
-
-            jq -r '
-              .rules[]? |
-              (.domain_suffix[]? // empty),
-              (.domain[]? // empty)
-            ' "$file" |
-            sed '/^[[:space:]]*$/d' |
-            sort -u > "$tmp"
-
-            if [ -s "$tmp" ]; then
-              echo "Building ${file} -> ${name}.mrs"
-
-              mihomo convert-ruleset \
-                domain \
-                text \
-                "$tmp" \
-                "${name}.mrs"
-
-              echo "Created ${name}.mrs"
-            else
-              echo "No domain rules found in ${file}"
-            fi
           done
 
       - name: Commit generated files
-        shell: bash
         run: |
           set -e
 
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add "*.srs" "*.mrs"
+          git add '*.srs' '*.mrs'
 
           if git diff --cached --quiet; then
             echo "No changes to commit."
@@ -182,4 +123,3 @@ jobs:
 
           git commit -m "build: update rule sets"
           git push
-```
