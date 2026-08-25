@@ -1,0 +1,190 @@
+```yaml
+name: Build Rule Sets
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - '**.json'
+      - '.github/workflows/build-rules.yml'
+
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # --------------------------------------------------
+      # Install latest stable sing-box
+      # --------------------------------------------------
+      - name: Install sing-box
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VERSION=$(curl -fsSL https://api.github.com/repos/SagerNet/sing-box/releases/latest \
+            | jq -r '.tag_name')
+
+          echo "Installing sing-box ${VERSION}"
+
+          curl -fL \
+            "https://github.com/SagerNet/sing-box/releases/download/${VERSION}/sing-box-${VERSION#v}-linux-amd64.tar.gz" \
+            -o /tmp/sing-box.tar.gz
+
+          tar -xzf /tmp/sing-box.tar.gz -C /tmp
+
+          sudo install -m 0755 \
+            "$(find /tmp -type f -name sing-box | head -n 1)" \
+            /usr/local/bin/sing-box
+
+          sing-box version
+
+      # --------------------------------------------------
+      # Install latest stable mihomo
+      # --------------------------------------------------
+      - name: Install mihomo
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VERSION=$(curl -fsSL https://api.github.com/repos/MetaCubeX/mihomo/releases/latest \
+            | jq -r '.tag_name')
+
+          echo "Installing mihomo ${VERSION}"
+
+          curl -fL \
+            "https://github.com/MetaCubeX/mihomo/releases/download/${VERSION}/mihomo-linux-amd64-${VERSION}.gz" \
+            -o /tmp/mihomo.gz
+
+          gunzip /tmp/mihomo.gz
+
+          sudo install -m 0755 \
+            /tmp/mihomo \
+            /usr/local/bin/mihomo
+
+          mihomo version
+
+      # --------------------------------------------------
+      # Compile every JSON → SRS + MRS
+      # --------------------------------------------------
+      - name: Build rule sets
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          shopt -s nullglob
+
+          json_files=( *.json )
+
+          if [ ${#json_files[@]} -eq 0 ]; then
+            echo "No JSON files found."
+            exit 0
+          fi
+
+          for json in "${json_files[@]}"; do
+
+            name="${json%.json}"
+
+            echo "========================================"
+            echo "Building: ${json}"
+            echo "========================================"
+
+            # ------------------------------------------
+            # Validate JSON
+            # ------------------------------------------
+            jq empty "$json"
+
+            # ------------------------------------------
+            # Build sing-box SRS
+            # ------------------------------------------
+            echo "→ ${name}.srs"
+
+            sing-box rule-set compile \
+              --output "${name}.srs" \
+              "$json"
+
+            # ------------------------------------------
+            # Build Mihomo MRS
+            #
+            # JSON source format:
+            #
+            # {
+            #   "version": 3,
+            #   "rules": [
+            #     {
+            #       "domain_suffix": [...]
+            #     }
+            #   ]
+            # }
+            #
+            # Extract domain_suffix / domain entries
+            # and convert them into Mihomo domain rules.
+            # ------------------------------------------
+
+            echo "→ ${name}.mrs"
+
+            tmp_file="$(mktemp)"
+
+            jq -r '
+              .rules[]? |
+              (.domain_suffix[]? // empty),
+              (.domain[]? // empty)
+            ' "$json" |
+            sed '/^[[:space:]]*$/d' |
+            sed 's/^\.+//' |
+            sed 's/^/+./' |
+            sort -u > "$tmp_file"
+
+            if [ -s "$tmp_file" ]; then
+              mihomo convert-ruleset \
+                domain \
+                text \
+                "$tmp_file" \
+                "${name}.mrs"
+            else
+              echo "No domain/domain_suffix rules found."
+              rm -f "${name}.mrs"
+            fi
+
+            rm -f "$tmp_file"
+
+            echo "Built:"
+            ls -lh "${name}.srs"
+
+            if [ -f "${name}.mrs" ]; then
+              ls -lh "${name}.mrs"
+            fi
+
+          done
+
+      # --------------------------------------------------
+      # Commit generated files
+      # --------------------------------------------------
+      - name: Commit generated rule sets
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add '*.srs' '*.mrs'
+
+          if git diff --cached --quiet; then
+            echo "No generated files changed."
+            exit 0
+          fi
+
+          git commit -m "build: update SRS and MRS rule sets"
+          git push
+```
