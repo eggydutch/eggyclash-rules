@@ -1,4 +1,8 @@
 payload:
   - DOMAIN-SUFFIX,weixin.com
   - DOMAIN-SUFFIX,quakoo.cn
+  - DOMAIN-SUFFIX,appstorehuan.com
+  - DOMAIN-SUFFIX,miaozhen.com
+  - DOMAIN-SUFFIX,quarkapi.com
+  - DOMAIN-SUFFIX,aliyuncs.com
   - DOMAIN-SUFFIX,tclai.top
