@@ -184,4 +184,3 @@ jobs:
 
           git commit -m "build: update rule sets"
           git push
-```
